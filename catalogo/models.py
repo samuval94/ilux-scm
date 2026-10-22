@@ -27,6 +27,8 @@ class Material(models.Model):
         HERRAMIENTA = "HERRAMIENTA", "Herramienta"
         EQUIPO = "EQUIPO", "Equipo"
 
+    UNIDADES_DECIMALES = ("MT", "KG")
+
     # Texto y no número: hay códigos como "609009-1" o "H00001002"
     codigo = models.CharField(max_length=20, unique=True)
     nombre = models.CharField(max_length=255, db_index=True)
@@ -42,3 +44,9 @@ class Material(models.Model):
 
     def __str__(self):
         return f"{self.codigo} - {self.nombre}"
+
+    @property
+    def admite_decimales(self):
+        return self.unidad in self.UNIDADES_DECIMALES
+
+    
