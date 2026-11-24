@@ -40,6 +40,23 @@ python manage.py runserver
 
 El front ya viene compilado en `frontend/dist` y Django lo sirve en `/`. No necesitas Node para probar.
 
+## 1b. Demostración con HTTPS desde cualquier celular (túnel de Cloudflare)
+
+La cámara, la instalación como app y la descarga del PDF funcionan sin avisos solo con HTTPS. Para una reunión o demo,
+sin instalar nada en un servidor:
+
+1. Instala el túnel (una sola vez): `winget install --id Cloudflare.cloudflared` y abre una terminal nueva.
+2. Terminal 1: ejecuta `demo_https.bat` (en Linux/macOS, `./demo_https.sh`). Pide una clave nueva para `admin` y `almacen`
+   (mínimo 8 caracteres; no acepta la de ejemplo) y deja la app en `http://localhost:8000`, solo para esa máquina.
+3. Terminal 2: `cloudflared tunnel --url http://localhost:8000`. Imprime una dirección `https://xxxx.trycloudflare.com`.
+4. Abre esa dirección en el celular. **Descarga el PDF desde esa dirección**: el QR del PDF apunta a la dirección desde la
+   que se generó.
+5. Al terminar, cierra el túnel con `Ctrl+C`. La dirección cambia cada vez y cualquiera que la tenga ve la pantalla de inicio
+   de sesión, por eso se cambia la clave y se cierra el túnel después.
+
+Este modo usa `DJANGO_DEBUG=0`, `ILUX_DETRAS_DE_PROXY=1` (confía en el encabezado `X-Forwarded-Proto` del túnel) y el
+servidor `waitress`. Para un despliegue permanente (enero) se usa el mismo mecanismo detrás de Caddy o nginx.
+
 ## 2. Cómo probarla (recorrido de 5 minutos)
 
 1. Entra como `almacen`. Elige **proyecto** y **quién recibe**.

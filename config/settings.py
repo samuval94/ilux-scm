@@ -26,6 +26,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    "whitenoise.middleware.WhiteNoiseMiddleware",  # sirve /static/ (admin) sin depender de runserver
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -72,6 +73,10 @@ USE_TZ = True
 
 STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
+STORAGES = {
+    "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+    "staticfiles": {"BACKEND": "whitenoise.storage.CompressedStaticFilesStorage"},
+}
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 # Las firmas se guardan aquí y NO se sirven públicamente: solo por la API autenticada.
@@ -79,6 +84,15 @@ MEDIA_ROOT = BASE_DIR / "media"
 
 # Carpeta del front compilado (npm run build). Django lo sirve en "/".
 FRONTEND_DIST = BASE_DIR / "frontend" / "dist"
+
+# Detrás de un túnel o proxy HTTPS (Cloudflare, Caddy, nginx): el proxy termina el HTTPS y avisa con
+# X-Forwarded-Proto. Sin esto, el QR del PDF y el inicio de sesión del admin usarían http://.
+DETRAS_DE_PROXY = os.environ.get("ILUX_DETRAS_DE_PROXY", "0") == "1"
+if DETRAS_DE_PROXY:
+    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+CSRF_TRUSTED_ORIGINS = [o for o in os.environ.get("DJANGO_CSRF_TRUSTED_ORIGINS", "").split(",") if o]
 
 # Si se define, el QR del PDF apunta a este dominio (ej. https://scm.ilux.com.co).
 URL_PUBLICA = os.environ.get("ILUX_URL_PUBLICA", "")
