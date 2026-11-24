@@ -12,7 +12,7 @@ export DJANGO_SECRET_KEY="$(python -c 'import secrets;print(secrets.token_urlsaf
 python manage.py migrate
 python manage.py cargar_demo
 python manage.py collectstatic --noinput
-read -rsp "Clave para admin y almacén (mínimo 8 caracteres): " ILUX_CLAVE; echo
+read -rsp "Clave para admin y almacén (mínimo 10 caracteres): " ILUX_CLAVE; echo
 export ILUX_CLAVE
 python manage.py fijar_claves || exit 1
 echo "===== App lista en http://localhost:8000 (solo esta máquina). Ahora abre el túnel de Cloudflare. ====="

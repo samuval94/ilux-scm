@@ -9,7 +9,7 @@ from django.utils.dateparse import parse_date
 from rest_framework import mixins, status, viewsets
 from rest_framework.authtoken.models import Token
 from rest_framework.decorators import action, api_view, permission_classes
-from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
+from rest_framework.exceptions import NotFound, PermissionDenied, Throttled, ValidationError
 from rest_framework.permissions import SAFE_METHODS, AllowAny, BasePermission, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -22,6 +22,7 @@ from .serializers import (
     RemisionDetailSerializer, RemisionListSerializer, archivo_de_firma,
 )
 from .services.excel import excel_herramientas, excel_pendientes_firma, excel_remisiones
+from .seguridad import ControlIntentos, token_vencido
 from .services.pdf import generar_pdf
 
 XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -54,10 +55,20 @@ class LoginView(APIView):
     authentication_classes = []
 
     def post(self, request):
-        user = authenticate(username=(request.data.get("username") or "").strip(), password=request.data.get("password") or "")
+        usuario = (request.data.get("username") or "").strip()
+        espera = ControlIntentos.segundos_de_bloqueo(usuario)
+        if espera:
+            minutos = -(-espera // 60)
+            raise Throttled(wait=espera, detail=f"Demasiados intentos fallidos. Intenta de nuevo en {minutos} minuto(s).")
+        user = authenticate(username=usuario, password=request.data.get("password") or "")
         if not user or not user.is_active:
+            ControlIntentos.registrar_fallo(usuario)
             raise ValidationError("Usuario o contraseña incorrectos.")
-        token, _ = Token.objects.get_or_create(user=user)
+        ControlIntentos.limpiar(usuario)
+        token, creado = Token.objects.get_or_create(user=user)
+        if not creado and token_vencido(token):
+            token.delete()
+            token = Token.objects.create(user=user)
         return Response({"token": token.key, "user": datos_usuario(user)})
 
 

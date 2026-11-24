@@ -18,7 +18,7 @@ python manage.py migrate
 python manage.py cargar_demo
 python manage.py collectstatic --noinput
 echo.
-echo Elige una clave para los usuarios admin y almacen (minimo 8 caracteres, sin los simbolos & %% ^)
+echo Elige una clave para los usuarios admin y almacen (minimo 10 caracteres, sin los simbolos & %% ^)
 set /p ILUX_CLAVE=Clave: 
 python manage.py fijar_claves
 if errorlevel 1 (

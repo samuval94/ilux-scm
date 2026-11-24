@@ -33,7 +33,7 @@ class FijarClavesTests(TestCase):
         self.assertTrue(User.objects.get(username="almacen").check_password("Otra-clave-2026"))
 
     def test_rechaza_clave_corta_o_de_ejemplo(self):
-        for mala in ("corta", "Ilux2026*"):
+        for mala in ("corta", "Ilux2026*", "1234567890", "password123"):
             with mock.patch.dict(os.environ, {"ILUX_CLAVE": mala}):
                 with self.assertRaises(CommandError):
                     call_command("fijar_claves", stdout=StringIO())

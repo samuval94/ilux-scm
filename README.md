@@ -47,7 +47,7 @@ sin instalar nada en un servidor:
 
 1. Instala el túnel (una sola vez): `winget install --id Cloudflare.cloudflared` y abre una terminal nueva.
 2. Terminal 1: ejecuta `demo_https.bat` (en Linux/macOS, `./demo_https.sh`). Pide una clave nueva para `admin` y `almacen`
-   (mínimo 8 caracteres; no acepta la de ejemplo) y deja la app en `http://localhost:8000`, solo para esa máquina.
+   (mínimo 10 caracteres; no acepta claves comunes, solo numéricas ni la de ejemplo) y deja la app en `http://localhost:8000`, solo para esa máquina.
 3. Terminal 2: `cloudflared tunnel --url http://localhost:8000`. Imprime una dirección `https://xxxx.trycloudflare.com`.
 4. Abre esa dirección en el celular. **Descarga el PDF desde esa dirección**: el QR del PDF apunta a la dirección desde la
    que se generó.
@@ -56,6 +56,21 @@ sin instalar nada en un servidor:
 
 Este modo usa `DJANGO_DEBUG=0`, `ILUX_DETRAS_DE_PROXY=1` (confía en el encabezado `X-Forwarded-Proto` del túnel) y el
 servidor `waitress`. Para un despliegue permanente (enero) se usa el mismo mecanismo detrás de Caddy o nginx.
+
+## 1c. Seguridad: lo que ya trae y cómo se configura
+
+- **Sesiones con vencimiento:** el inicio de sesión dura `ILUX_SESION_HORAS` horas (12 por defecto). Al vencer, la app pide
+  iniciar sesión de nuevo; las remisiones firmadas sin señal siguen guardadas en el celular y se envían al volver a entrar.
+  Para cerrar sesiones a la fuerza: panel `/admin/` → *Tokens* → borrar.
+- **Bloqueo por intentos fallidos:** 5 fallos seguidos con el mismo usuario bloquean ese usuario 15 minutos (aunque
+  después se escriba la clave correcta). Si bloquean a alguien por error en una demo, reiniciar el servidor lo desbloquea.
+  El conteo vive en memoria; con varios procesos en producción hay que moverlo a una base compartida.
+- **Claves:** mínimo 10 caracteres, sin claves comunes ni solo numéricas, ni parecidas al nombre de usuario.
+- **Cabeceras:** política de contenido (solo recursos propios), cámara permitida solo para esta app, sin caché en `/api/`,
+  protección contra incrustación (clickjacking) y HSTS cuando va detrás de HTTPS (`ILUX_HSTS_SEGUNDOS`).
+- **Pendiente para producción:** usuario por persona, auditoría de accesos, copias de seguridad, PostgreSQL y política de datos
+  personales (Ley 1581 de 2012). `react-router-dom` 6 tiene un aviso de redirección abierta que no aplica aquí (la app solo
+  navega a rutas internas fijas); se resuelve al migrar a la versión 7.
 
 ## 2. Cómo probarla (recorrido de 5 minutos)
 
@@ -91,7 +106,7 @@ En el celular (misma red Wi-Fi) abre `https://IP-DE-TU-PC:5173`, acepta el aviso
 ## 3. Pruebas automáticas
 
 ```bash
-python manage.py test        # 34 pruebas: reglas de negocio, API, PDF/Excel, importador, permisos
+python manage.py test        # 50 pruebas: reglas de negocio, API, PDF/Excel, importador, permisos, sesiones, bloqueo y cabeceras
 ```
 
 ## 4. Estructura

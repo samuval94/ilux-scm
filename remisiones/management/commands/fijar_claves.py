@@ -1,6 +1,8 @@
 import os
 
 from django.contrib.auth import get_user_model
+from django.contrib.auth.password_validation import validate_password
+from django.core.exceptions import ValidationError
 from django.core.management.base import BaseCommand, CommandError
 
 CLAVE_DE_EJEMPLO = "Ilux2026*"
@@ -11,10 +13,12 @@ class Command(BaseCommand):
 
     def handle(self, *args, **opts):
         clave = os.environ.get("ILUX_CLAVE", "")
-        if len(clave) < 8:
-            raise CommandError("ILUX_CLAVE debe tener al menos 8 caracteres.")
         if clave == CLAVE_DE_EJEMPLO:
             raise CommandError("Elige una clave distinta de la de ejemplo.")
+        try:
+            validate_password(clave)
+        except ValidationError as exc:
+            raise CommandError(" ".join(exc.messages))
         User = get_user_model()
         for nombre in ("admin", "almacen"):
             u = User.objects.filter(username=nombre).first()
