@@ -1,22 +1,35 @@
-"""
-URL configuration for config project.
+import mimetypes
+from pathlib import Path
 
-The `urlpatterns` list routes URLs to views. For more information please see:
-    https://docs.djangoproject.com/en/6.1/topics/http/urls/
-Examples:
-Function views
-    1. Add an import:  from my_app import views
-    2. Add a URL to urlpatterns:  path('', views.home, name='home')
-Class-based views
-    1. Add an import:  from other_app.views import Home
-    2. Add a URL to urlpatterns:  path('', Home.as_view(), name='home')
-Including another URLconf
-    1. Import the include() function: from django.urls import include, path
-    2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
-"""
+from django.conf import settings
 from django.contrib import admin
-from django.urls import path
+from django.http import FileResponse, Http404
+from django.urls import include, path, re_path
+
+
+def spa(request, ruta=""):
+    """Sirve el front compilado (React). Cualquier ruta desconocida devuelve index.html."""
+    dist = Path(settings.FRONTEND_DIST).resolve()
+    if not (dist / "index.html").exists():
+        raise Http404(
+            "El front no está compilado. Ejecuta: cd frontend && npm install && npm run build "
+            "(o usa npm run dev para desarrollo)."
+        )
+    archivo = (dist / ruta).resolve()
+    if ruta and archivo.is_file() and dist in archivo.parents:
+        tipo, _ = mimetypes.guess_type(str(archivo))
+        resp = FileResponse(open(archivo, "rb"), content_type=tipo or "application/octet-stream")
+        if archivo.name in ("sw.js", "index.html", "manifest.webmanifest"):
+            resp["Cache-Control"] = "no-cache"
+        return resp
+    resp = FileResponse(open(dist / "index.html", "rb"), content_type="text/html")
+    resp["Cache-Control"] = "no-cache"
+    return resp
+
 
 urlpatterns = [
-    path('admin/', admin.site.urls),
+    path("admin/", admin.site.urls),
+    path("api/", include("catalogo.urls")),
+    path("api/", include("remisiones.urls")),
+    re_path(r"^(?!api/|admin/|static/)(?P<ruta>.*)$", spa),
 ]

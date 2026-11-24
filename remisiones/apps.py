@@ -2,4 +2,5 @@ from django.apps import AppConfig
 
 
 class RemisionesConfig(AppConfig):
-    name = 'remisiones'
+    default_auto_field = "django.db.models.BigAutoField"
+    name = "remisiones"

@@ -35,13 +35,12 @@ class Proyecto(models.Model):
 
 
 class Consecutivo(models.Model):
-    """Una sola fila que lleva el último número de remisión."""
+    """Una sola fila que lleva el último número de remisión (se bloquea al usarla)."""
 
     ultimo = models.PositiveIntegerField(default=0)
 
     @classmethod
     def siguiente(cls):
-        # select_for_update bloquea la fila: dos firmas simultáneas no obtienen el mismo número
         fila, _ = cls.objects.select_for_update().get_or_create(pk=1)
         fila.ultimo += 1
         fila.save(update_fields=["ultimo"])
@@ -54,7 +53,9 @@ class Remision(models.Model):
         FIRMADA = "FIRMADA", "Firmada"
         ANULADA = "ANULADA", "Anulada"
 
+    # UUID generado por el cliente: permite trabajar sin conexión y reenviar sin duplicar
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    # El número oficial se asigna al firmar
     numero = models.PositiveIntegerField(unique=True, null=True, blank=True, editable=False)
     proyecto = models.ForeignKey(Proyecto, on_delete=models.PROTECT, related_name="remisiones")
     entregada_por = models.ForeignKey(
@@ -66,21 +67,29 @@ class Remision(models.Model):
     estado = models.CharField(max_length=10, choices=Estado.choices, default=Estado.BORRADOR)
     observaciones = models.TextField(blank=True)
     creada_en = models.DateTimeField(auto_now_add=True)
+    actualizada_en = models.DateTimeField(auto_now=True)
     firmada_en = models.DateTimeField(null=True, blank=True)
+    # Anulación (solo desde FIRMADA, con motivo obligatorio)
+    motivo_anulacion = models.TextField(blank=True)
+    anulada_en = models.DateTimeField(null=True, blank=True)
+    anulada_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.PROTECT,
+        related_name="remisiones_anuladas",
+    )
 
     class Meta:
         ordering = ["-creada_en"]
-        verbose_name = "remisión"
-        verbose_name_plural = "remisiones"
 
     def __str__(self):
-        return f"Remisión {self.numero or 'borrador'} - {self.proyecto}"
+        return f"Remisión {self.numero_formato or 'borrador'} - {self.proyecto}"
+
+    @property
+    def numero_formato(self):
+        return f"{self.numero:06d}" if self.numero else None
 
     def save(self, *args, **kwargs):
         if not self._state.adding:
-            anterior = (
-                Remision.objects.filter(pk=self.pk).values_list("estado", flat=True).first()
-            )
+            anterior = Remision.objects.filter(pk=self.pk).values_list("estado", flat=True).first()
             if anterior == self.Estado.ANULADA:
                 raise ValidationError("Una remisión anulada no se puede modificar.")
             if anterior == self.Estado.FIRMADA and self.estado != self.Estado.ANULADA:
@@ -95,12 +104,27 @@ class Remision(models.Model):
             raise ValidationError("Solo se puede firmar una remisión en borrador.")
         if not self.items.exists():
             raise ValidationError("La remisión no tiene ítems.")
+        if not (nombre or "").strip() or not (cedula or "").strip():
+            raise ValidationError("La firma requiere nombre y cédula de quien recibe.")
         Firma.objects.create(
-            remision=self, imagen=archivo_firma, nombre=nombre, cedula=cedula, ip=ip
+            remision=self, imagen=archivo_firma, nombre=nombre.strip(), cedula=cedula.strip(), ip=ip
         )
         self.numero = Consecutivo.siguiente()
         self.estado = self.Estado.FIRMADA
         self.firmada_en = timezone.now()
+        self.save()
+
+    @transaction.atomic
+    def anular(self, usuario, motivo):
+        if self.estado != self.Estado.FIRMADA:
+            raise ValidationError("Solo se puede anular una remisión firmada (un borrador se elimina).")
+        motivo = (motivo or "").strip()
+        if len(motivo) < 5:
+            raise ValidationError("Escribe el motivo de la anulación (mínimo 5 caracteres).")
+        self.estado = self.Estado.ANULADA
+        self.motivo_anulacion = motivo
+        self.anulada_en = timezone.now()
+        self.anulada_por = usuario
         self.save()
 
 
@@ -109,15 +133,13 @@ class ItemRemision(models.Model):
     material = models.ForeignKey(Material, on_delete=models.PROTECT)
     cantidad = models.DecimalField(max_digits=12, decimal_places=2)
     observacion = models.CharField(max_length=255, blank=True)
+    # Solo herramientas/equipos: fecha en la que se espera la devolución
+    devolver_antes_de = models.DateField(null=True, blank=True)
 
     class Meta:
         constraints = [
-            models.UniqueConstraint(
-                fields=["remision", "material"], name="material_unico_por_remision"
-            ),
-            models.CheckConstraint(
-                condition=models.Q(cantidad__gt=0), name="cantidad_positiva"
-            ),
+            models.UniqueConstraint(fields=["remision", "material"], name="material_unico_por_remision"),
+            models.CheckConstraint(condition=models.Q(cantidad__gt=0), name="cantidad_positiva"),
         ]
 
     def _validar_borrador(self):
@@ -125,8 +147,6 @@ class ItemRemision(models.Model):
             raise ValidationError("Solo se pueden modificar ítems de una remisión en borrador.")
 
     def clean(self):
-        if not self.remision_id or not self.material_id or self.cantidad is None:
-            return  # los campos obligatorios vacíos los reporta el formulario
         self._validar_borrador()
         cantidad = Decimal(str(self.cantidad))
         if cantidad <= 0:
@@ -156,3 +176,17 @@ class Firma(models.Model):
     cedula = models.CharField(max_length=20)
     firmada_en = models.DateTimeField(auto_now_add=True)
     ip = models.GenericIPAddressField(null=True, blank=True)
+
+
+class Devolucion(models.Model):
+    """Registro de que una herramienta o equipo entregado fue devuelto."""
+
+    item = models.OneToOneField(ItemRemision, on_delete=models.PROTECT, related_name="devolucion")
+    devuelta_en = models.DateTimeField(default=timezone.now)
+    recibida_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="devoluciones_recibidas"
+    )
+    observacion = models.CharField(max_length=255, blank=True)
+
+    class Meta:
+        ordering = ["-devuelta_en"]

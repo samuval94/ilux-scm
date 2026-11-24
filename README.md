@@ -1,0 +1,138 @@
+# ILUX SCM – Sistema de Control de Materiales (remisiones digitales)
+
+Prototipo del proyecto de Sistemas de Información (EAFIT, 2026-2) para **ILUX Ingeniería S.A.S.**
+El técnico escanea el código de barras del material → el sistema muestra el nombre del catálogo → se edita la
+cantidad → quien recibe **firma en pantalla** → la remisión queda bloqueada con número consecutivo y se descarga en **PDF** y **Excel**.
+
+Stack: **Django 6 + Django REST Framework** (API) · **React + Vite** (PWA) · SQLite (se puede pasar a PostgreSQL).
+
+---
+
+## 1. Arranque rápido (solo necesitas Python 3.12 o superior)
+
+**Windows:** doble clic en `iniciar.bat` (o ejecútalo desde la terminal).
+**Linux / macOS:** `./iniciar.sh`
+
+Eso crea el entorno virtual, instala dependencias, crea la base de datos, carga datos de demostración
+(970 materiales del catálogo de ILUX, proyectos y empleados de ejemplo) y levanta el servidor.
+
+> **El catálogo de ILUX no está en este repositorio** (la carpeta `data/` está en `.gitignore` porque es información de la empresa). Antes de arrancar, copia `BASE_DE_DATOS_MATERIAL.xls` en `data/`; si no está, la app arranca con el catálogo vacío y se puede importar después desde *Gestión → Catálogo*.
+
+Abre **http://localhost:8000**
+
+| Usuario | Clave | Rol |
+|---|---|---|
+| `admin` | `Ilux2026*` | Administrador (anula remisiones, gestiona catálogo, proyectos y empleados) |
+| `almacen` | `Ilux2026*` | Operador (crea, firma y consulta remisiones) |
+
+> Cambia estas claves antes de usar la app con datos reales (`python manage.py changepassword admin`).
+
+Paso a paso manual (equivale al script):
+
+```bash
+python -m venv venv
+venv\Scripts\activate            # Windows   (Linux/macOS: source venv/bin/activate)
+pip install -r requirements.txt
+python manage.py migrate
+python manage.py cargar_demo
+python manage.py runserver
+```
+
+El front ya viene compilado en `frontend/dist` y Django lo sirve en `/`. No necesitas Node para probar.
+
+## 2. Cómo probarla (recorrido de 5 minutos)
+
+1. Entra como `almacen`. Elige **proyecto** y **quién recibe**.
+2. Agrega ítems de tres formas:
+   - **Cámara:** botón *Escanear*. Imprime o abre `data/codigos_de_prueba.pdf` en otra pantalla y apunta la cámara.
+   - **Lector USB/Bluetooth:** el campo de código siempre está listo; el lector escribe el código y pulsa Enter.
+   - **A mano / por nombre:** escribe `10001005` o `alambre thhn` y elige de la lista (sirve para herramientas sin código impreso).
+3. Edita las cantidades. Metros y kilogramos aceptan decimales (`125,5`); las demás unidades solo enteros.
+4. **Firmar remisión** → quien recibe firma con el dedo o el mouse → *Firmar y guardar*. Se asigna el número y queda bloqueada.
+5. Descarga el **PDF** (con QR de verificación) y el **Excel**.
+6. **Historial:** filtros, detalle, firma. Como `admin`, abre una remisión firmada y pulsa **Anular** (pide motivo).
+7. **Herramientas:** las herramientas/equipos entregados quedan en seguimiento hasta registrar su devolución
+   (en `Gestión → Catálogo` puedes cambiar el *tipo* de cualquier ítem; `PALA` y `MUELA` ya vienen como herramienta).
+8. **Sin señal:** en el navegador activa modo avión (o *Offline* en DevTools), firma una remisión → queda en *Pendientes* y se envía sola al volver la conexión.
+9. **Panel:** indicadores (remisiones firmadas, % con firma – KPI 2 de la Entrega 2, borradores >24 h, herramientas vencidas).
+10. Escanea el **QR del PDF** con el celular: abre la página pública de verificación (`/verificar/<id>`).
+
+### Probar en el celular (cámara)
+Los navegadores solo dejan usar la cámara con **HTTPS o localhost**. Para el celular:
+
+```bash
+# terminal 1 (en la carpeta del proyecto)
+python manage.py runserver 0.0.0.0:8000
+# terminal 2
+cd frontend
+npm install
+npm run dev:https
+```
+En el celular (misma red Wi-Fi) abre `https://IP-DE-TU-PC:5173`, acepta el aviso del certificado de desarrollo y listo.
+(Sin HTTPS puedes usar lector USB/Bluetooth o escribir el código.)
+
+## 3. Pruebas automáticas
+
+```bash
+python manage.py test        # 34 pruebas: reglas de negocio, API, PDF/Excel, importador, permisos
+```
+
+## 4. Estructura
+
+```
+config/        Configuración de Django y rutas (sirve el front en "/")
+catalogo/      Grupos y materiales (material/herramienta/equipo), importador Excel/CSV, API de catálogo
+remisiones/    Remisión, ítems, firma, consecutivo, devoluciones; API, PDF (ReportLab) y Excel (openpyxl)
+frontend/      React + Vite (PWA). Código fuente en frontend/src, compilado en frontend/dist
+data/          BASE_DE_DATOS_MATERIAL.xls (catálogo de ILUX) y codigos_de_prueba.pdf
+```
+
+Comandos útiles:
+
+```bash
+python manage.py importar_catalogo data/BASE_DE_DATOS_MATERIAL.xls            # crea/actualiza por código
+python manage.py importar_catalogo nueva_base.xlsx --desactivar-faltantes      # base definitiva de Jorge
+python manage.py codigos_prueba                                                # regenera el PDF de códigos de prueba
+python manage.py createsuperuser                                               # más administradores
+```
+Admin de Django (datos crudos): http://localhost:8000/admin/
+
+Cambiar el front: `cd frontend && npm install && npm run dev` (http://localhost:5173, con proxy al servidor Django) y `npm run build` para compilar.
+El diseño (logo, paleta de ILUX, tipografías incluidas en la app, accesibilidad y gráficos del panel) está documentado en `frontend/DISENO.md`.
+
+## 5. Reglas de negocio implementadas (en el modelo, no solo en la pantalla)
+
+- La **solicitud** de materiales no se digitaliza: el flujo parte del escaneo. La app **no maneja precios**.
+- Una remisión es siempre completa (sin entregas parciales).
+- Estados: `BORRADOR → FIRMADA → ANULADA`. Una **firmada se bloquea**; solo se puede **anular con motivo** (solo administrador). Un borrador se elimina.
+- El **número consecutivo** se asigna al firmar (sin huecos, con bloqueo de fila).
+- Firma obligatoria con nombre y cédula; se guarda imagen, fecha e IP. Las firmas **no se sirven públicamente** (solo por la API autenticada).
+- Cantidad > 0; **decimales solo en metros (MT) y kilogramos (KG)**; un material no se repite en la misma remisión.
+- El `id` de la remisión es un UUID creado por el cliente: reenviar la misma remisión no la duplica (modo sin conexión).
+- El importador actualiza por **código (texto)**, nunca borra y valida duplicados, unidades y columnas.
+
+## 6. API (resumen)
+
+Autenticación por token: `POST /api/auth/login/` → `Authorization: Token <token>`.
+
+| Ruta | Descripción |
+|---|---|
+| `GET /api/materiales/?search=&tipo=` · `/catalogo/` · `/por-codigo/<codigo>/` | Catálogo (el completo se guarda en el celular) |
+| `POST /api/remisiones/guardar/` | Crea/actualiza un borrador y opcionalmente lo firma (idempotente por UUID) |
+| `GET /api/remisiones/?estado=&proyecto=&q=&desde=&hasta=` | Historial con filtros |
+| `GET /api/remisiones/<id>/pdf/` · `/excel/` · `/firma/` | Descargas |
+| `POST /api/remisiones/<id>/anular/` | Anular con motivo (admin) |
+| `GET /api/remisiones/exportar/` | Excel de varias remisiones; `?formato=pendientes` = borradores sin firmar |
+| `GET /api/herramientas/pendientes/` · `/excel/` · `POST /api/items/<id>/devolver/` | Seguimiento de devoluciones |
+| `GET /api/resumen/` | Indicadores del panel |
+| `GET /api/verificar/<id>/` | Verificación pública (destino del QR) |
+
+Los Excel traen una **Tabla de Excel con nombre fijo** (`Remisiones`, `RemisionesPendientes`, `HerramientasEntregadas`) para usarlos con
+*Power Automate → Excel Online → "List rows present in a table"* (automatizaciones de la Entrega 3).
+
+## 7. Qué falta / límites conocidos (para decidir con ILUX)
+
+- **Catálogo definitivo:** solo los materiales traen código impreso. Herramientas y equipos se buscan por nombre; el tipo (material/herramienta/equipo) se clasifica en *Gestión → Catálogo* o con la columna `tipo` en la base definitiva.
+- **Modo sin conexión:** funciona para crear y firmar (catálogo, proyectos y empleados quedan en el celular; las remisiones firmadas se encolan). No hay PDF hasta que se sincronice.
+- Los tokens no vencen (se invalidan al cerrar sesión). Para producción: HTTPS, `DJANGO_DEBUG=0`, `DJANGO_SECRET_KEY` propia, `DJANGO_ALLOWED_HOSTS`, PostgreSQL y copias de seguridad de `media/` (firmas).
+- No incluye: firma remota del receptor desde su propio celular por QR, devoluciones parciales, reportes por proyecto ni integración directa con SAG/Odoo (ver trabajo futuro en la Entrega 3).

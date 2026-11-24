@@ -1,8 +1,6 @@
 from django.contrib import admin
 
-from .models import Consecutivo, Empleado, ItemRemision, Proyecto, Remision
-
-admin.site.register(Consecutivo)
+from .models import Devolucion, Empleado, Firma, ItemRemision, Proyecto, Remision
 
 
 @admin.register(Empleado)
@@ -17,19 +15,30 @@ class ProyectoAdmin(admin.ModelAdmin):
     search_fields = ["nombre"]
 
 
+class ItemInline(admin.TabularInline):
+    model = ItemRemision
+    extra = 0
+    readonly_fields = ["material", "cantidad", "observacion", "devolver_antes_de"]
+    can_delete = False
+
+    def has_add_permission(self, request, obj=None):
+        return False
+
+
 @admin.register(Remision)
 class RemisionAdmin(admin.ModelAdmin):
-    list_display = ["numero", "proyecto", "recibida_por", "estado", "creada_en"]
+    list_display = ["numero_formato", "proyecto", "recibida_por", "entregada_por", "estado", "creada_en"]
     list_filter = ["estado", "proyecto"]
-    readonly_fields = ["numero", "estado", "firmada_en"]
+    search_fields = ["numero", "proyecto__nombre", "recibida_por__nombre"]
+    readonly_fields = [f.name for f in Remision._meta.fields]
+    inlines = [ItemInline]
 
-    def has_change_permission(self, request, obj=None):
-        if obj and obj.estado != Remision.Estado.BORRADOR:
-            return False  # solo se editan borradores
-        return super().has_change_permission(request, obj)
+    def has_add_permission(self, request):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
 
 
-@admin.register(ItemRemision)
-class ItemRemisionAdmin(admin.ModelAdmin):
-    list_display = ["remision", "material", "cantidad"]
-    autocomplete_fields = ["material"]
+admin.site.register(Firma)
+admin.site.register(Devolucion)
